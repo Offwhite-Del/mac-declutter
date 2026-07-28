@@ -20,8 +20,11 @@ Born from a real-world cleanup session that reclaimed ~20 GB and removed dozens 
 ## Install
 
 ```bash
-# pi
-cp -R mac-declutter ~/.pi/agent/skills/
+# pi (recommended)
+pi install npm:mac-declutter
+
+# or copy manually
+cp -R skills/mac-declutter ~/.pi/agent/skills/
 
 # or symlink to share across agents
 ln -s "$PWD/mac-declutter" ~/.agents/skills/mac-declutter
