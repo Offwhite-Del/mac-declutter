@@ -1,5 +1,5 @@
 #!/bin/bash
-# mac-declutter inventory: read-only snapshot of agents, services, apps, and caches.
+# mac-declutter inventory: read-only snapshot of agents, services, apps, caches, and hidden bloat.
 # Usage: bash inventory.sh
 set -u
 
@@ -37,6 +37,27 @@ echo; echo "===== 6. Cache hotspots ====="
 du -sh "$HOME/Library/Caches" "$HOME/.npm" "$HOME/.cache" "$HOME/.bun/install/cache" 2>/dev/null | sort -rh
 du -sh "$HOME/Library/Caches/"* 2>/dev/null | sort -rh | head -8
 
-echo; echo "===== 7. Performance ====="
+echo; echo "===== 7. Build artifact hotspots ====="
+# Rust target dirs
+find "$HOME/projects" -maxdepth 5 -type d -name "target" -exec du -sh {} \; 2>/dev/null | sort -rh | head -5
+# Node modules
+find "$HOME/projects" -maxdepth 4 -type d -name "node_modules" -exec du -sh {} \; 2>/dev/null | sort -rh | head -5
+
+echo; echo "===== 8. Sandbox container bloat ====="
+du -d1 -sh "$HOME/Library/Containers/"*/ 2>/dev/null | sort -rh | head -10
+
+echo; echo "===== 9. Xcode junk ====="
+for d in "iOS DeviceSupport" "DerivedData" "Archives" "CoreSimulator"; do
+  du -sh "$HOME/Library/Developer/Xcode/$d" 2>/dev/null
+done
+
+echo; echo "===== 10. Python virtual envs ====="
+find "$HOME" -maxdepth 5 \( -name ".venv" -o -name "venv" -o -name ".step_ai_env" \) -not -path "*/node_modules/*" -exec du -sh {} \; 2>/dev/null | sort -rh | head -5
+
+echo; echo "===== 11. Large files outside Library (>= 100M) ====="
+find "$HOME" -maxdepth 6 -type f -size +100M -not -path "*/Library/*" -not -path "*/.Trash/*" -exec ls -lh {} \; 2>/dev/null | sort -k5 -rh | head -10
+
+echo; echo "===== 12. Performance ====="
 memory_pressure 2>/dev/null | tail -2
 sysctl -n vm.swapusage vm.loadavg
+echo; echo "Disk: $(df -h / | awk 'NR==2{print $4 " available of " $2}')"

@@ -1,6 +1,6 @@
 {
   "name": "mac-declutter",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Agent skill for deep-cleaning macOS dev machines: AI agent sprawl, zombie services, app leftovers, proxy traps, cache purges, performance audits",
   "keywords": [
     "pi-package",

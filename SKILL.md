@@ -2,7 +2,7 @@
 name: mac-declutter
 description: Deep-clean a macOS machine — inventory and uninstall stale AI agents/CLIs/apps, remove launchd services, login items, Library leftovers, caches, and fix proxy/network misconfiguration. Use when the user wants to declutter their Mac, remove unused AI coding agents, free disk space, kill zombie background services, diagnose "everything disconnected" proxy failures, or audit system performance (memory/CPU). Triggers include "clean up my mac", "too many agents installed", "uninstall leftovers", "what's taking space", "check my mac's performance".
 metadata:
-  version: "1.0.0"
+  version: "1.2.0"
 ---
 
 # mac-declutter
@@ -84,3 +84,111 @@ ps -axm -o rss,comm | awk 'NR>1 {rss=$1; $1=""; sub(/^ /,""); a[$0]+=rss} END {f
 - Proxy port listening matches `scutil --proxy`; key API endpoints reachable (`401` = reachable-but-needs-auth, which is a pass).
 - Each surviving agent CLI passes a real end-to-end test (send a one-line prompt, expect a reply).
 - `df -h /` before/after for the score.
+
+## Phase 6 — Deep disk analysis (find hidden space eaters)
+
+Beyond caches, these are the real disk hogs:
+
+### Build artifacts
+```bash
+# Rust target dirs can hit 40G+
+find ~/projects -type d -name "target" -exec du -sh {} \;
+# Node.js
+find ~/projects -type d -name "node_modules" -exec du -sh {} \;
+```
+- `cargo clean` or `rm -rf target/` — safe, regenerated on next build.
+- `npm cache clean --force` — ~2G typical.
+
+### Xcode junk
+```bash
+du -sh ~/Library/Developer/Xcode/iOS\ DeviceSupport  # 6G+, safe to delete
+du -sh ~/Library/Developer/Xcode/DerivedData          # safe to delete
+du -sh ~/Library/Developer/CoreSimulator              # Simulators, keep if needed
+```
+
+### Sandbox container bloat
+App containers inside `~/Library/Containers/` accumulate data independently of the app binary:
+```bash
+du -d1 -sh ~/Library/Containers/*/ | sort -rh | head -15
+```
+Key offenders and what's safe to clean:
+- **WPS**: `Containers/.../WPS Cloud Files/userdata` — cloud sync cache, safe
+- **Docker**: `Containers/.../com.docker.docker` — `docker system prune -af`
+- **WeChat**: `Containers/.../xwechat_files/*/msg/{attach,video,file}` — chat files (don't touch), `radium/web` — browser cache (safe)
+- **Feishu**: `Containers/.../Caches` — safe. `aha/users` — chat data, don't touch.
+- **QQ Music**: `iMusic`, `iDownloadProxy`, `iRRCache` — all cache, safe.
+- **Safari**: `Caches` + `WebKit` — safe.
+- **WeCom**: `cefcache` — embedded browser cache, safe.
+
+### Python envs
+```bash
+find ~ -maxdepth 4 -type d -name ".venv" -o -name "venv" | while read d; do du -sh "$d"; done
+```
+Virtual environments can reach GBs. Archive idle ones to iCloud.
+
+## Phase 7 — iCloud offload strategy
+
+When local disk is tight and iCloud has room (2TB plans are common):
+
+### Agent sessions → iCloud with symlinks
+```bash
+ICLOUD=~/"Library/Mobile Documents/com~apple~CloudDocs"
+mkdir -p "$ICLOUD/agent-sessions"
+for agent in .claude .codex .workbuddy .pi .zcode .jcode; do
+  [ -d ~/$agent ] && mv ~/$agent "$ICLOUD/agent-sessions/$agent" && ln -s "$ICLOUD/agent-sessions/$agent" ~/$agent
+done
+```
+⚠️ Never move the currently running agent's session dir.
+
+### Old projects → iCloud archive
+```bash
+mkdir -p "$ICLOUD/archive/projects"
+# Move stalled/inactive projects
+mv ~/old-project "$ICLOUD/archive/projects/"
+```
+
+### Documents → iCloud
+Enable "Desktop & Documents Folders" in System Settings → Apple ID → iCloud → iCloud Drive. This auto-offloads rarely-used files.
+
+### ⚠️ macOS locked dirs
+`~/Downloads`, `~/Desktop`, `~/Documents`, `~/Pictures` are TCC/SIP-protected. You cannot replace them with symlinks. Content can be moved, but the directories themselves are locked by the system.
+
+## Phase 8 — Project organization
+
+For developers with many repos scattered across Documents, Desktop, and home root:
+
+1. **Audit each directory**: check README, git remote, last commit, language, state
+2. **Categorize**:
+   - Active → `~/projects/`
+   - Stalled/archived → iCloud
+   - Empty/ghost repos → delete
+   - Documents → keep in Documents
+3. **Write PROJECT.md** for each moved project with: type, language, license, status, 1-line description
+4. **Consolidate related archives** — e.g. all "ThreeYan" sub-projects under one root
+
+## Phase 9 — Document dedup
+
+Common on work Desktops: multiple PDF revisions, test exports, intermediate files.
+
+```bash
+# Find large PDFs with similar names
+find ~/Desktop ~/Documents -name "*.pdf" -size +50M -exec ls -lh {} \;
+```
+
+⚠️ **Principle**: Before deleting any revision or intermediate file, ask the user which version to keep. Some "middle" files contain manual annotations that don't exist in the source PDF. The rule is: **inventory first, delete with confirmation**.
+
+## Lessons from 2026-07-31 session (142G → 264G freed)
+
+| Operation | Savings |
+|-----------|---------|
+| Caches (`~/Library/Caches`, `~/.cache`) | 11.7G |
+| Claude desktop VM bundles | 13.4G |
+| Chrome Service Worker + TranslateKit | 3.0G |
+| Rust `target/` dirs (sun-code 47G + sun-kernel 14G) | 61G |
+| Xcode iOS DeviceSupport | 6.3G |
+| WPS cloud cache + Docker data | 15G |
+| App container caches (Feishu, QQ Music, Safari, WeCom) | 5.8G |
+| Old PDF revisions + duplicate files | 5G |
+| → iCloud offload (agent sessions, docs, archives) | 18G |
+
+Total: **122G freed**, 18G offloaded to iCloud. End state: 264G available on 460G disk.
